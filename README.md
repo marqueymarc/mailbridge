@@ -1,4 +1,12 @@
-# Mail Importer for Gmail
+# Mail Importer for Gmail — Humboldt migration fork
+
+This working copy is maintained outside `chatmisc` at:
+
+`/Volumes/Humboldt/marc-data/mail-importer`
+
+It is based on Google's archived `mail-importer` project and is intended for
+the preserved Thunderbird mail tree on Humboldt. The source archives and the
+current Thunderbird transfer remain untouched by this project.
 
 Do you have an old Thunderbird mail archive that you POP3ed down from AOL?
 
@@ -26,8 +34,10 @@ wrong.
 
 ## How can I run it?
 
-Currently, _Mail Importer for Gmail_ is in early development. It is **not** user
-friendly in any way. If you are not a developer, you probably want to stay away.
+This fork adds Humboldt-local OAuth and checkpoint paths, a `Legacy Mail/`
+label prefix, automatic creation of missing labels, and an append-only
+checkpoint ledger. It remains a command-line tool and must be tested with a
+bounded pilot before a full import.
 
 ### Getting a Client Secret
 
@@ -43,9 +53,9 @@ should be a JSON file named something like:
 client_secret_729820383-898athoe9t33ntohuoc.apps.googleusercontent.com.json
 ```
 
-You need to copy this to `src/main/resources/client_secret.json` in your Mail
-Importer project. _**Never check in this file!**_ It is _your_ key and no one
-else's.
+Copy the downloaded desktop OAuth JSON to
+`state/client_secret.json`. The `state/` directory is ignored by Git and must
+never be committed or shared.
 
 ### Building Mail Importer
 
@@ -58,18 +68,139 @@ mvn clean package assembly:single
 ```
 
 This will produce a runnable `.jar` file in
-`target/mail-importer-1.0-SNAPSHOT-jar-with-dependencies.jar`.
+`target/mail-importer-0.0.0-SNAPSHOT-jar-with-dependencies.jar`.
 
 ### Running Mail Importer
 
 Once Mail Importer is built, you can run it like:
 
 ```
-java -jar ./target/mail-importer-1.0-SNAPSHOT-jar-with-dependencies.jar \
-    --mailbox DIRECTORY
+java -jar ./target/mail-importer-0.0.0-SNAPSHOT-jar-with-dependencies.jar \
+    --mailbox DIRECTORY \
+    --user shadowmarq@gmail.com
 ```
 
 where `DIRECTORY` is the Thunderbird _mailbox_ to open.
+
+### Humboldt runner
+
+For the Humboldt migration, use the repository runner so the mailbox names,
+checkpoint files, OAuth paths, label prefix, and concurrency bounds stay in one
+auditable place:
+
+```sh
+./mail-migration.sh build
+  ./mail-migration.sh scan marc-old
+  ./mail-migration.sh run marc-old
+  ./mail-migration.sh status
+```
+
+The supported mailbox keys are `marc-old` for `Legacy marc.old` and
+`legacy-import` for `Legacy Import`. Each upload and label pass is resumable
+from its own append-only checkpoint ledger. The default upload bounds are 4 to
+8 workers and the label bounds are 2 to 4; set the corresponding
+`MAIL_*_CONCURRENCY` environment variables if a controlled test needs other
+bounds.
+
+The guarded two-mailbox workflow is:
+
+```sh
+./mail-migration.sh guarded
+```
+
+It completes `Legacy marc.old` and then pauses before scanning the handoff or
+starting `Legacy Import`. After the cleanup inventory has been reviewed and
+approved, release it explicitly:
+
+```sh
+./mail-migration.sh approve-import
+```
+
+The approval is a local sentinel at `state/cleanup-approved`; it is ignored by
+Git and contains no credentials. Do not create it until cleanup is complete.
+The guarded handoff then verifies every current source-message key against both
+checkpoint ledgers before it starts `Legacy Import`; historical ledger lines
+from earlier pilots do not count as current-source completion.
+
+The Humboldt runner uses a fresh `v4-<folder>-journal.tsv` for each source
+folder. The older
+`marc-old-checkpoint.tsv` and `marc-old-label-checkpoint.tsv` files are retained
+as historical evidence and are not reused. Version 3 captures the original
+RFC822 `Message-ID` before JavaMail normalization, uses that stable identity for
+upload checkpoints, and uses a separate message-plus-folder identity for label
+checkpoints. This prevents JavaMail-generated IDs and folder changes from
+turning a restart into a new upload pass.
+
+### Archive upload mode
+
+The normal runner is an archive uploader, not a Thunderbird-folder mirror. It
+uploads concurrently, does not perform one Gmail lookup per source message, and
+does not copy source folder labels. Each successful imported message receives
+the one Gmail label `Local Imported` (override with
+`MAIL_IMPORTER_ARCHIVE_LABEL`).
+
+#### Gmail conversations are not duplicate detection
+
+Gmail groups related messages into a conversation. The number beside a sender
+in the message list (for example, `Restaurant.com 6`) is the number of
+individual messages in that one conversation, not six conversations. Gmail
+also displays the union of labels held by messages in that conversation. Thus a
+conversation can visibly show both `Legacy Mail/Legacy marc.old` and `Local
+Imported` even though archive mode added only the latter to the newly imported
+message; the former can belong to an older message already in the same thread.
+
+That display does not make raw-message imports idempotent. A same-subject,
+same-date source message may join an existing Gmail conversation while still
+being stored as an additional individual message. Consequently, do not treat a
+matching conversation or `Message-ID` search result as proof that a source
+message was already uploaded, and do not start a full migration after a pilot
+until its individual-message results are accepted. The safe default is to keep
+ambiguous `in_flight` records unresolved rather than retrying them. A future
+deduplication pass must compare the candidate Gmail message's content with the
+source message, not merely compare its conversation, subject, or `Message-ID`.
+
+Archive mode uses Gmail's direct `messages.insert` endpoint (rather than delivery-style
+`messages.import`) and applies its single archive label in the same request. It immediately
+reads back the returned Gmail ID before completing the journal entry. A response whose ID cannot
+be read after short backoff remains `in_flight` for review; it is never silently accepted or
+automatically resent.
+
+Before the Gmail upload request, the v4 journal appends and forces an
+`in_flight` record. On a Gmail response it writes `uploaded` with the returned
+Gmail ID, applies `Local Imported`, then writes `completed`. Thus a restart can
+finish an interrupted label application without re-uploading that message.
+Completed records are skipped. An unresolved `in_flight` request is left for
+review by default; `MAIL_RETRY_INFLIGHT=1` explicitly retries it and accepts a
+small lost-response duplicate risk.
+
+There is one OS-backed lock at `state/uploader.lock`, so only one writer can
+use the destination and journals at a time. Folder journals remain separate:
+
+```sh
+./mail-migration.sh run marc-old
+./mail-migration.sh verify marc-old
+./mail-migration.sh run legacy-import
+./mail-migration.sh verify legacy-import
+```
+
+For a future source folder directly beneath `MAIL_SOURCE_ROOT`, use its folder
+name as the argument; the runner derives a sanitized matching journal name.
+To run the checks and Java tests in one command:
+
+```sh
+./mail-migration.sh test
+```
+
+The importer sets Gmail's internal-date source to the message `Date` header,
+while retaining the original raw bytes for checkpoint identity. MIME
+normalization preserves the source `Message-ID` and canonicalizes an existing
+source `Date` into a Gmail-safe RFC 2822 form; it never uses the upload time as
+a message date. When a legacy message has no usable `Date`, the uploader
+derives one from the earliest parseable `Received` timestamp. A
+retry after a network failure therefore resumes from durable checkpoints
+without relying on unstable local iteration order. OAuth refresh credentials,
+client secrets, checkpoints, logs, and other runtime state remain outside the
+revision.
 
 Note that the Thunderbird `Mail` directory usually has several sub-directories
 called `ImapMail`, `OfflineCache`, and `Mail`. Then under `Mail`, you should
@@ -81,8 +212,86 @@ For example, if you had old CompuServe mail on a Mac, you might run Mail
 Importer like this:
 
 ```
-java -jar ./target/mail-importer-1.0-SNAPSHOT-jar-with-dependencies.jar \
+    java -jar ./target/mail-importer-0.0.0-SNAPSHOT-jar-with-dependencies.jar \
     --mailbox /Users/me/Library/Thunderbird/my_profile/Mail/pop.csi.com
+```
+
+## Humboldt pilot
+
+Do not run this while Thunderbird is actively uploading the same messages.
+First record or stop that transfer. Then build and run a 100-message pilot:
+
+```sh
+JAVA_HOME=/opt/homebrew/opt/openjdk /opt/homebrew/bin/mvn -q -DskipTests package
+
+JAVA_HOME=/opt/homebrew/opt/openjdk /opt/homebrew/opt/openjdk/bin/java \
+  -jar target/mail-importer-0.0.0-SNAPSHOT-jar-with-dependencies.jar \
+  --mailbox "/Volumes/Humboldt/marc-data/Thunderbird-ESR-Profile/Mail/Local Folders/Legacy Import" \
+  --user shadowmarq@gmail.com \
+  --max_messages 100 \
+  --label_prefix "Legacy Mail/" \
+  --checkpoint state/import-checkpoint.tsv \
+  --label_checkpoint state/import-label-checkpoint.tsv \
+  --credential_store state/oauth \
+  --client_secret state/client_secret.json
+```
+
+The first run opens the OAuth authorization flow. The upload checkpoint records
+the source message identity and returned Gmail message ID. The label checkpoint
+records successful label application. A rerun skips messages complete in both
+ledgers and still performs Gmail-side Message-ID deduplication. After the pilot
+is verified, repeat with `Legacy marc.old` using separate paths such as
+`state/marc-old-checkpoint.tsv` and `state/marc-old-label-checkpoint.tsv`, then
+remove `--max_messages` for the full run.
+
+The importer starts with the runner's four upload workers, can increase to
+eight after clean progress, and halves concurrency when Gmail returns a
+rate-limit response. Override those bounds with
+`MAIL_UPLOAD_INITIAL_CONCURRENCY` and `MAIL_UPLOAD_MAX_CONCURRENCY` in the
+runner, or the corresponding Java flags when using the JAR directly. Label
+updates start with two workers, can rise to four, and have their own
+`MAIL_LABEL_INITIAL_CONCURRENCY` and `MAIL_LABEL_MAX_CONCURRENCY` bounds. The
+upload checkpoint is written as soon as
+the Gmail ID is known; the label checkpoint is written only after label updates
+succeed.
+
+Before resuming a migration, run the no-write Gmail audit. It performs only
+RFC822 Message-ID lookups and reports which source messages are already present;
+it never uploads, changes labels, or edits a checkpoint:
+
+```sh
+MAIL_AUDIT_MAX_MESSAGES=100 ./mail-migration.sh audit marc-old
+```
+
+Omit `MAIL_AUDIT_MAX_MESSAGES` only after reviewing the pilot result. A full
+audit can issue one Gmail lookup per source message and is intentionally kept
+separate from the upload command.
+
+To repair labels for messages already recorded in a checkpoint, use
+`--repair_labels`; this reuses the recorded Gmail IDs and does not upload
+duplicates:
+
+```sh
+JAVA_HOME=/opt/homebrew/opt/openjdk /opt/homebrew/opt/openjdk/bin/java \
+  -jar target/mail-importer-0.0.0-SNAPSHOT-jar-with-dependencies.jar \
+  --mailbox "/Volumes/Humboldt/marc-data/Thunderbird-ESR-Profile/Mail/Local Folders/Legacy marc.old" \
+  --user shadowmarq@gmail.com \
+  --max_messages 200 \
+  --repair_labels \
+  --checkpoint state/marc-old-checkpoint.tsv \
+  --label_checkpoint state/marc-old-label-checkpoint.tsv \
+  --credential_store state/oauth \
+  --client_secret state/client_secret.json
+```
+
+Before authorizing Gmail, the local parser can be checked without contacting
+Google:
+
+```sh
+JAVA_HOME=/opt/homebrew/opt/openjdk /opt/homebrew/opt/openjdk/bin/java \
+  -jar target/mail-importer-0.0.0-SNAPSHOT-jar-with-dependencies.jar \
+  --mailbox "/Volumes/Humboldt/marc-data/Thunderbird-ESR-Profile/Mail/Local Folders/Legacy Import" \
+  --scan_only
 ```
 
 ## Can I help make _Mail Importer_ better?

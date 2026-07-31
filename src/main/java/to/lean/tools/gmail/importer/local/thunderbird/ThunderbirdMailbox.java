@@ -17,55 +17,27 @@
 package to.lean.tools.gmail.importer.local.thunderbird;
 
 import com.google.inject.Inject;
-import java.io.File;
-import java.util.Properties;
-import java.util.logging.Logger;
+import java.io.IOException;
 import javax.mail.MessagingException;
-import javax.mail.Session;
-import javax.mail.Store;
-import javax.mail.URLName;
 import to.lean.tools.gmail.importer.CommandLineArguments;
 import to.lean.tools.gmail.importer.MailProvider;
-import to.lean.tools.gmail.importer.local.JavaxMailFolder;
-import to.lean.tools.gmail.importer.local.JavaxMailStorage;
 import to.lean.tools.gmail.importer.local.LocalStorage;
 
 /** Reads a Thunderbird mailbox. */
 class ThunderbirdMailbox implements MailProvider<LocalStorage> {
 
-  private final Logger logger;
   private final CommandLineArguments commandLineArguments;
-  private final XMozillaStatusParser statusParser;
 
   @Inject
-  ThunderbirdMailbox(
-      Logger logger, CommandLineArguments commandLineArguments, XMozillaStatusParser statusParser) {
-    this.logger = logger;
+  ThunderbirdMailbox(CommandLineArguments commandLineArguments) {
     this.commandLineArguments = commandLineArguments;
-    this.statusParser = statusParser;
   }
 
-  public JavaxMailStorage get() throws MessagingException {
-    Properties properties = new Properties();
-    properties.setProperty("mail.store.protocol", "mstor");
-    properties.setProperty("mstor.mbox.metadataStrategy", "none");
-    properties.setProperty("mstor.mbox.cacheBuffers", "disabled");
-    properties.setProperty("mstor.mbox.bufferStrategy", "mapped");
-    properties.setProperty("mstor.metadata", "disabled");
-    properties.setProperty("mstor.mozillaCompatibility", "enabled");
-
-    Session session = Session.getDefaultInstance(properties);
-
-    // /Users/flan/Desktop/Copy of Marie's Mail/Mail/Mail/mail.lean.to
-    File mailbox = new File(commandLineArguments.mailboxFileName);
-    if (!mailbox.exists()) {
-      throw new MessagingException("No such mailbox:" + mailbox);
+  public LocalStorage get() throws MessagingException {
+    try {
+      return new StreamingMboxStorage(commandLineArguments.mailboxFileName);
+    } catch (IOException e) {
+      throw new MessagingException(e.getMessage(), e);
     }
-
-    Store store = session.getStore(new URLName("mstor:" + mailbox.getAbsolutePath()));
-    store.connect();
-
-    return new ThunderbirdMailStorage(
-        logger, new JavaxMailFolder(store.getDefaultFolder()), statusParser);
   }
 }

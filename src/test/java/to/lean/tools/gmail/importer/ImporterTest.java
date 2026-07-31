@@ -64,7 +64,7 @@ public class ImporterTest {
 
     importer =
         new Importer(
-            Logger.getLogger("test"), localStorageProvider, gmailSyncer, commandLineArguments);
+            Logger.getLogger("test"), localStorageProvider, () -> gmailSyncer, commandLineArguments);
   }
 
   @Test

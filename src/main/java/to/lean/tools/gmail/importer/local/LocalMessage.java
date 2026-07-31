@@ -16,7 +16,11 @@
 
 package to.lean.tools.gmail.importer.local;
 
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.Base64;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * Provides a generic interface to messages on local storage that can be used get the contents and
@@ -46,4 +50,30 @@ public interface LocalMessage {
   boolean isUnread();
 
   boolean isStarred();
+
+  /** Stable identity for restart-safe local import bookkeeping. */
+  default String getCheckpointKey() {
+    try {
+      MessageDigest digest = MessageDigest.getInstance("SHA-256");
+      String folders = getFolders().stream().sorted().collect(Collectors.joining("\u001f"));
+      digest.update(getRawContent());
+      digest.update((byte) 0);
+      digest.update(folders.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+      return getMessageId()
+          + "\t"
+          + Base64.getUrlEncoder().withoutPadding().encodeToString(digest.digest());
+    } catch (NoSuchAlgorithmException e) {
+      throw new AssertionError("SHA-256 is required", e);
+    }
+  }
+
+  /** Identity used to decide whether the message body has already been uploaded. */
+  default String getUploadCheckpointKey() {
+    return getCheckpointKey();
+  }
+
+  /** Identity used to decide whether this message has received its local-folder labels. */
+  default String getLabelCheckpointKey() {
+    return getCheckpointKey();
+  }
 }

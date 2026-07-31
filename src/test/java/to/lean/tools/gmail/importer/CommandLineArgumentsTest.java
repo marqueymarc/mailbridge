@@ -68,6 +68,35 @@ public class CommandLineArgumentsTest {
     assertThat(commandLineArguments.maxMessages).isNull();
   }
 
+  @Test
+  public void testArgumentParsing_verifyCheckpoint() throws Exception {
+    CommandLineArguments commandLineArguments = parse(new String[] {"--verify_checkpoint", "--mailbox=/tmp/mailbox"});
+
+    assertThat(commandLineArguments.verifyCheckpoint).isTrue();
+    assertThat(commandLineArguments.scanOnly).isFalse();
+  }
+
+  @Test
+  public void testArgumentParsing_archiveLabel() throws Exception {
+    CommandLineArguments arguments =
+        parse(new String[] {"--mailbox=/tmp/mailbox", "--skip_labels", "--archive_label", "Local Imported"});
+
+    assertThat(arguments.skipLabels).isTrue();
+    assertThat(arguments.archiveLabel).isEqualTo("Local Imported");
+  }
+
+  @Test
+  public void testArgumentParsing_archiveReliabilityFlags() throws Exception {
+    CommandLineArguments arguments =
+        parse(
+            new String[] {
+              "--mailbox=/tmp/mailbox", "--direct_insert", "--verify_after_upload"
+            });
+
+    assertThat(arguments.directInsert).isTrue();
+    assertThat(arguments.verifyAfterUpload).isTrue();
+  }
+
   private CommandLineArguments parse(String[] args) throws CmdLineException {
     CommandLineArguments commandLineArguments = new CommandLineArguments();
     CmdLineParser commandLine = new CmdLineParser(commandLineArguments);

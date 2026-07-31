@@ -25,7 +25,9 @@ import com.google.api.client.util.BackOff;
 import com.google.api.client.util.ExponentialBackOff;
 import com.google.inject.AbstractModule;
 import com.google.inject.Provides;
+import java.io.IOException;
 import javax.inject.Singleton;
+import to.lean.tools.gmail.importer.CheckpointStores;
 import to.lean.tools.gmail.importer.CommandLineArguments;
 
 /** Module that provides the Gmail service. */
@@ -47,6 +49,15 @@ public class GmailServiceModule extends AbstractModule {
                 .setRandomizationFactor(0.5)
                 .setMaxIntervalMillis(60000)
                 .setMaxElapsedTimeMillis(300000));
+  }
+
+  @Provides
+  @Singleton
+  CheckpointStores provideCheckpointStores(CommandLineArguments commandLineArguments)
+      throws IOException {
+    return new CheckpointStores(
+        commandLineArguments.checkpointPath,
+        commandLineArguments.skipLabels ? null : commandLineArguments.labelCheckpointPath);
   }
 
   @Provides

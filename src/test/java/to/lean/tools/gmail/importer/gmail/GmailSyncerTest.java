@@ -25,12 +25,15 @@ import static org.mockito.Mockito.when;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.MultimapBuilder;
+import com.google.api.services.gmail.model.Message;
 import java.util.Collections;
 import java.util.List;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
+import to.lean.tools.gmail.importer.CheckpointStore;
+import to.lean.tools.gmail.importer.CommandLineArguments;
 import to.lean.tools.gmail.importer.local.LocalMessage;
 
 public class GmailSyncerTest {
@@ -77,6 +80,84 @@ public class GmailSyncerTest {
     gmailSyncer.sync(localMessages);
   }
 
+  @Test
+  public void archiveModeCompletesAnAcceptedUploadByAddingOnlyTheArchiveLabel() throws Exception {
+    CommandLineArguments arguments = new CommandLineArguments();
+    arguments.skipLabels = true;
+    arguments.archiveLabel = "Local Imported";
+    CheckpointStore checkpoint =
+        new CheckpointStore(
+            java.nio.file.Files.createTempDirectory("mail-importer-sync")
+                .resolve("journal.tsv")
+                .toString());
+    FakeLocalMessage message = new FakeLocalMessage("Subject", "Body");
+    checkpoint.markUploaded(message.getUploadCheckpointKey(), "gmail-id");
+    gmailSyncer = new GmailSyncer(mailbox, checkpoint, null, arguments);
+
+    gmailSyncer.init();
+    gmailSyncer.sync(ImmutableList.of(message));
+
+    verify(mailbox).ensureArchiveLabel("Local Imported");
+    verify(mailbox).applyArchiveLabel("gmail-id", "Local Imported");
+    verify(mailbox, never()).mapMessageIds(anyList());
+    verify(mailbox, never()).uploadMessage(any());
+    assertWithMessage("the already accepted Gmail id should become a completed source record")
+        .that(checkpoint.isCompleted(message.getUploadCheckpointKey()))
+        .isTrue();
+  }
+
+  @Test
+  public void archiveModeCompletesNewUploadWhenLabelIsEmbeddedInImport() throws Exception {
+    CommandLineArguments arguments = new CommandLineArguments();
+    arguments.skipLabels = true;
+    arguments.archiveLabel = "Local Imported";
+    CheckpointStore checkpoint =
+        new CheckpointStore(
+            java.nio.file.Files.createTempDirectory("mail-importer-sync")
+                .resolve("journal.tsv")
+                .toString());
+    FakeLocalMessage message = new FakeLocalMessage("Subject", "Body");
+    when(mailbox.uploadMessage(any())).thenReturn(new Message().setId("gmail-id"));
+    when(mailbox.embedsArchiveLabelOnUpload()).thenReturn(true);
+    gmailSyncer = new GmailSyncer(mailbox, checkpoint, null, arguments);
+
+    gmailSyncer.init();
+    gmailSyncer.sync(ImmutableList.of(message));
+
+    verify(mailbox).ensureArchiveLabel("Local Imported");
+    verify(mailbox, never()).applyArchiveLabel("gmail-id", "Local Imported");
+    assertWithMessage("the atomically labeled upload should be complete")
+        .that(checkpoint.isCompleted(message.getUploadCheckpointKey()))
+        .isTrue();
+  }
+
+  @Test
+  public void verificationFailureLeavesNewUploadInFlight() throws Exception {
+    CommandLineArguments arguments = new CommandLineArguments();
+    arguments.skipLabels = true;
+    arguments.archiveLabel = "Local Imported";
+    arguments.verifyAfterUpload = true;
+    CheckpointStore checkpoint =
+        new CheckpointStore(
+            java.nio.file.Files.createTempDirectory("mail-importer-sync")
+                .resolve("journal.tsv")
+                .toString());
+    FakeLocalMessage message = new FakeLocalMessage("Subject", "Body");
+    when(mailbox.uploadMessage(any())).thenReturn(new Message().setId("missing-gmail-id"));
+    when(mailbox.gmailMessageExists("missing-gmail-id")).thenReturn(false);
+    gmailSyncer = new GmailSyncer(mailbox, checkpoint, null, arguments);
+
+    gmailSyncer.init();
+    gmailSyncer.sync(ImmutableList.of(message));
+
+    assertWithMessage("an unreadable returned ID must never be completed")
+        .that(checkpoint.isCompleted(message.getUploadCheckpointKey()))
+        .isFalse();
+    assertWithMessage("the source stays explicitly ambiguous for review")
+        .that(checkpoint.isInFlight(message.getUploadCheckpointKey()))
+        .isTrue();
+  }
+
   private void setUpEmptyMailbox() {
     when(mailbox.mapMessageIds(anyList()))
         .thenAnswer(
@@ -109,7 +190,7 @@ public class GmailSyncerTest {
 
     @Override
     public List<String> getFolders() {
-      return null;
+      return Collections.singletonList("test");
     }
 
     @Override

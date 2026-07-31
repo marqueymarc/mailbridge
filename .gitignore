@@ -1,14 +1,14 @@
 # IntelliJ
 .idea
 *.iml
-/target/
-/src/exploration/
-
 *.ipr
 *.iws
 
-# Client Secrets
-/src/main/resources/client_secret*.json
-
 # Maven
+/target/
 pom.xml.versionsBackup
+
+# Exploration and local credentials
+/src/exploration/
+state/
+/src/main/resources/client_secret*.json
