@@ -246,6 +246,12 @@ is reported rather than re-uploaded, because re-uploading it could create a
 duplicate after a delayed Gmail response. The membership scan includes Spam and
 Trash; Gmail's label summary counters may exclude those system locations, so
 the reconciliation result is the authoritative membership check.
+
+This means a label can contain messages that Gmail currently places in Spam or
+Trash. They still carry the archive label and remain in the journal, but they
+may not appear in the ordinary label count or normal mailbox view. The
+reconciliation pass does not move, restore, delete, or permanently purge such
+messages; it only adds the requested archive label when it is missing.
 The command fails if any journaled ID remains unlabeled after the repair pass.
 
 #### Gmail conversations are not duplicate detection
