@@ -98,6 +98,10 @@ public class Importer {
       labelStatus();
       return;
     }
+    if (commandLineArguments.trashLabelName != null) {
+      trashLabel();
+      return;
+    }
     LocalStorage storage = storageProvider.get();
     if (commandLineArguments.scanOnly) {
       scanLocalStorage(storage);
@@ -159,6 +163,15 @@ public class Importer {
         label.getMessagesUnread() == null ? 0 : label.getMessagesUnread(),
         label.getThreadsTotal() == null ? 0 : label.getThreadsTotal(),
         label.getThreadsUnread() == null ? 0 : label.getThreadsUnread());
+  }
+
+  private void trashLabel() throws IOException {
+    GmailSyncer gmailSyncer = gmailSyncerProvider.get();
+    gmailSyncer.init();
+    int trashed = gmailSyncer.trashLabel(commandLineArguments.trashLabelName);
+    System.out.format(
+        "TRASH_LABEL name=%s messages_trashed=%d%n",
+        commandLineArguments.trashLabelName, trashed);
   }
 
   private void importToGmail(LocalStorage storage) throws MessagingException, IOException {

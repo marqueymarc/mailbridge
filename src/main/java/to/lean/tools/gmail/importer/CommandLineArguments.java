@@ -163,6 +163,12 @@ public class CommandLineArguments {
   public String labelStatusName;
 
   @Option(
+      name = "--trash_label",
+      metaVar = "LABEL",
+      usage = "Move every message carrying one Gmail label to Trash.")
+  public String trashLabelName;
+
+  @Option(
       name = "--verify_returned_ids",
       usage = "Read each completed checkpoint's returned Gmail message ID and report whether it still exists; no writes.")
   public boolean verifyReturnedIds;

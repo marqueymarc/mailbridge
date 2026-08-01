@@ -28,6 +28,7 @@ import com.google.api.client.http.AbstractInputStreamContent;
 import com.google.api.client.http.HttpHeaders;
 import com.google.api.services.gmail.Gmail;
 import com.google.api.services.gmail.model.Label;
+import com.google.api.services.gmail.model.BatchModifyMessagesRequest;
 import com.google.api.services.gmail.model.ListLabelsResponse;
 import com.google.api.services.gmail.model.ListMessagesResponse;
 import com.google.api.services.gmail.model.Message;
@@ -42,6 +43,7 @@ import com.google.common.io.ByteStreams;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.ArrayDeque;
 import java.util.Collections;
 import java.util.Deque;
@@ -207,6 +209,50 @@ class Mailbox {
         .labels()
         .get(user.getEmailAddress(), label.getId())
         .execute();
+  }
+
+  int trashLabel(String name) throws IOException {
+    Label label = labelsByName.get(name);
+    if (label == null) {
+      throw new IOException("Gmail label does not exist: " + name);
+    }
+    Gmail gmail = gmailService.getServiceWithRetries();
+    String pageToken = null;
+    List<String> messageIds = new ArrayList<>();
+    do {
+      ListMessagesResponse response =
+          gmail
+              .users()
+              .messages()
+              .list(user.getEmailAddress())
+              .setLabelIds(Collections.singletonList(label.getId()))
+              .setPageToken(pageToken)
+              .setMaxResults(500L)
+              .execute();
+      if (response.getMessages() != null) {
+        for (Message message : response.getMessages()) {
+          messageIds.add(message.getId());
+        }
+      }
+      pageToken = response.getNextPageToken();
+    } while (pageToken != null && !pageToken.isEmpty());
+
+    // Snapshot all IDs before mutating Gmail; otherwise moving messages to Trash while paging
+    // can cause the same label query to return them again and create an unbounded loop.
+    for (int start = 0; start < messageIds.size(); start += 1000) {
+      List<String> batch = messageIds.subList(start, Math.min(start + 1000, messageIds.size()));
+      gmail
+          .users()
+          .messages()
+          .batchModify(
+              user.getEmailAddress(),
+              new BatchModifyMessagesRequest()
+                  .setIds(batch)
+                  .setAddLabelIds(Collections.singletonList("TRASH"))
+                  .setRemoveLabelIds(Collections.singletonList(label.getId())))
+          .execute();
+    }
+    return messageIds.size();
   }
 
   /** Returns whether Gmail can currently retrieve this immutable message ID. */

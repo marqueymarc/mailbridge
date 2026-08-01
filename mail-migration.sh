@@ -60,7 +60,7 @@ mailbox_name() {
     legacy-import) print -r -- "Legacy Import" ;;
     *"/"*|*".."*) die "mailbox must be a direct source folder name" ;;
     *)
-      [[ -d "$SOURCE_ROOT/$1" ]] || die "source mailbox folder not found: $SOURCE_ROOT/$1"
+      [[ -d "$SOURCE_ROOT/$1" || -f "$SOURCE_ROOT/$1" ]] || die "source mailbox folder or file not found: $SOURCE_ROOT/$1"
       print -r -- "$1"
       ;;
   esac

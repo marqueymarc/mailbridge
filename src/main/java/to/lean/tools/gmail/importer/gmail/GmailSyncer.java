@@ -96,6 +96,14 @@ public class GmailSyncer {
     return mailbox.getLabelStatus(labelName);
   }
 
+  /** Moves every message carrying the named user label to Gmail Trash. */
+  public int trashLabel(String labelName) throws IOException {
+    if (!initialized) {
+      throw new IOException("GmailSyncer must be initialized before trashing a label");
+    }
+    return mailbox.trashLabel(labelName);
+  }
+
   /** Read-only existence check for a Gmail message ID returned by a prior upload. */
   public boolean gmailMessageExists(String gmailMessageId) throws IOException {
     if (!initialized) {
