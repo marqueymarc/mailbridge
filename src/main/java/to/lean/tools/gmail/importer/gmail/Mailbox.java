@@ -117,7 +117,14 @@ class Mailbox {
 
   /** Ensures one archive label exists without interpreting local folders or message state. */
   void ensureArchiveLabel(String name) throws IOException {
-    if (name == null || name.trim().isEmpty() || labelsByName.containsKey(name)) {
+    if (name == null || name.trim().isEmpty()) {
+      return;
+    }
+    Label existing = findLabel(name);
+    if (existing != null) {
+      // Gmail exposes system labels using uppercase names (for example IMPORTANT), while a
+      // Thunderbird/IMAP folder may be presented as Important. Reuse the existing system label.
+      labelsByName.put(name, existing);
       return;
     }
     Label created =
@@ -139,7 +146,7 @@ class Mailbox {
 
   /** Adds the archive label only; it never removes Inbox, unread, spam, or other labels. */
   void applyArchiveLabel(String gmailMessageId, String name) throws IOException {
-    Label label = labelsByName.get(name);
+    Label label = findLabel(name);
     if (label == null) {
       throw new IOException("Archive label is unavailable: " + name);
     }
@@ -200,7 +207,7 @@ class Mailbox {
 
   /** Reads fresh Gmail counters for a known label; it does not modify Gmail state. */
   Label getLabelStatus(String name) throws IOException {
-    Label label = labelsByName.get(name);
+    Label label = findLabel(name);
     if (label == null) {
       throw new IOException("Gmail label does not exist: " + name);
     }
@@ -258,7 +265,7 @@ class Mailbox {
 
   ArchiveLabelReconciliation reconcileArchiveLabel(String name, Set<String> expectedIds)
       throws IOException {
-    Label label = labelsByName.get(name);
+    Label label = findLabel(name);
     if (label == null) {
       throw new IOException("Gmail label does not exist: " + name);
     }
@@ -328,6 +335,19 @@ class Mailbox {
       pageToken = response.getNextPageToken();
     } while (pageToken != null && !pageToken.isEmpty());
     return messageIds;
+  }
+
+  private Label findLabel(String name) {
+    Label exact = labelsByName.get(name);
+    if (exact != null) {
+      return exact;
+    }
+    for (Map.Entry<String, Label> entry : labelsByName.entrySet()) {
+      if (entry.getKey().equalsIgnoreCase(name)) {
+        return entry.getValue();
+      }
+    }
+    return null;
   }
 
   static final class ArchiveLabelReconciliation {

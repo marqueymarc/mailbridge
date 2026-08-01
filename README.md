@@ -227,6 +227,11 @@ does not copy source folder labels. Each successful imported message receives
 the one Gmail label `Local Imported` (override with
 `MAIL_IMPORTER_ARCHIVE_LABEL`).
 
+Gmail system labels are case-insensitive at the source-folder boundary. For
+example, requesting archive label `Important` reuses Gmail's existing system
+label `IMPORTANT`; the runner does not attempt to create an invalid duplicate
+user label.
+
 After an archive upload, the runner automatically reconciles the archive label
 against the completed Gmail IDs in that folder's journal. It lists the current
 members of the label, batch-adds the label to any journaled IDs that are
