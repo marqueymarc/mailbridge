@@ -31,6 +31,7 @@ Commands:
   reconcile MAILBOX        Reconcile only ambiguous in-flight requests (no uploads).
   guarded                  Run marc.old, pause for cleanup approval, then Import.
   status                   Show processes and durable checkpoint counts.
+  config                   Show the resolved non-secret account and state paths.
   approve-import           Release the guarded handoff after cleanup review.
   help                     Show this help.
 
@@ -219,6 +220,16 @@ status() {
   fi
 }
 
+config() {
+  print -r -- "user=$USER_EMAIL"
+  print -r -- "source_root=$SOURCE_ROOT"
+  print -r -- "state=$STATE"
+  print -r -- "credential_store=$CREDENTIAL_STORE"
+  print -r -- "client_secret=$CLIENT_SECRET"
+  print -r -- "archive_label=$ARCHIVE_LABEL"
+  print -r -- "label_prefix=$LABEL_PREFIX"
+}
+
 [[ $# -gt 0 ]] || { usage; exit 0; }
 command_name="$1"
 shift
@@ -260,6 +271,9 @@ case "$command_name" in
     ;;
   status)
     status
+    ;;
+  config)
+    config
     ;;
   approve-import)
     mkdir -p "$STATE"

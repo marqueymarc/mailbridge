@@ -57,6 +57,83 @@ Copy the downloaded desktop OAuth JSON to
 `state/client_secret.json`. The `state/` directory is ignored by Git and must
 never be committed or shared.
 
+### Multiple Gmail accounts
+
+The same OAuth client secret may be used for more than one personal Gmail
+account, but each destination account must have its own OAuth credential store
+and its own state directory. The state directory contains the append-only
+upload journal, so sharing it would make a second account incorrectly look
+complete and could suppress uploads. The client secret is reusable; the
+refresh-token stores are not.
+
+Create the Google Cloud project and desktop OAuth client once, then authorize
+each account separately. In Google Cloud Console:
+
+1. Enable the Gmail API for the project.
+2. Configure the OAuth consent screen as an external app and add each Gmail
+   address as a test user if the app is still in testing.
+3. Create an OAuth Client ID of type **Desktop app** and download its JSON.
+4. Keep that JSON outside Git, for example at
+   `/Volumes/Humboldt/marc-data/mail-importer/state/client_secret.json`.
+
+Use explicit per-account paths. This preserves the existing `shadowmarq` state
+and prepares an independent profile for the second account:
+
+```sh
+ROOT=/Volumes/Humboldt/marc-data/mail-importer
+SOURCE=/Volumes/Humboldt/marc-data/Thunderbird-ESR-Profile/Mail/Local\ Folders
+
+# Existing destination: resume only with its existing journal and token store.
+MAIL_IMPORTER_USER=shadowmarq@gmail.com \
+MAIL_IMPORTER_STATE="$ROOT/state" \
+MAIL_IMPORTER_CREDENTIAL_STORE="$ROOT/state/oauth-reauthorize-v2" \
+MAIL_IMPORTER_CLIENT_SECRET="$ROOT/state/client_secret.json" \
+MAIL_SOURCE_ROOT="$SOURCE" \
+  "$ROOT/mail-migration.sh" config
+
+# New destination: do not copy the shadowmarq journal or refresh-token store.
+MAIL_IMPORTER_USER=marc.a.meyer@gmail.com \
+MAIL_IMPORTER_STATE="$ROOT/state/accounts/marc.a.meyer" \
+MAIL_IMPORTER_CREDENTIAL_STORE="$ROOT/state/oauth/marc.a.meyer" \
+MAIL_IMPORTER_CLIENT_SECRET="$ROOT/state/client_secret.json" \
+MAIL_SOURCE_ROOT="$SOURCE" \
+  "$ROOT/mail-migration.sh" config
+```
+
+On the first command that contacts Gmail for a new account (`scan` is local
+only; use a bounded `run` or `audit`), the tool starts the OAuth flow. Sign in
+as the destination account, grant the requested Gmail scopes, and allow the
+localhost callback. The account named by `MAIL_IMPORTER_USER` must match the
+account authorized into that credential store. If the browser cannot complete
+the callback, keep the terminal running and open the printed authorization URL
+on the Mac; do not reuse another account's token directory.
+
+For the second account, authorize and test independently before a full run:
+
+```sh
+MAIL_IMPORTER_USER=marc.a.meyer@gmail.com \
+MAIL_IMPORTER_STATE="$ROOT/state/accounts/marc.a.meyer" \
+MAIL_IMPORTER_CREDENTIAL_STORE="$ROOT/state/oauth/marc.a.meyer" \
+MAIL_IMPORTER_CLIENT_SECRET="$ROOT/state/client_secret.json" \
+MAIL_SOURCE_ROOT="$SOURCE" \
+MAIL_MAX_MESSAGES=100 \
+MAIL_IMPORTER_ARCHIVE_LABEL="Imported Important" \
+  "$ROOT/mail-migration.sh" run Important
+
+MAIL_IMPORTER_USER=marc.a.meyer@gmail.com \
+MAIL_IMPORTER_STATE="$ROOT/state/accounts/marc.a.meyer" \
+MAIL_IMPORTER_CREDENTIAL_STORE="$ROOT/state/oauth/marc.a.meyer" \
+MAIL_IMPORTER_CLIENT_SECRET="$ROOT/state/client_secret.json" \
+MAIL_SOURCE_ROOT="$SOURCE" \
+  "$ROOT/mail-migration.sh" verify Important
+```
+
+The pilot journal is under the second account's state directory and cannot
+consume the `shadowmarq` journal. After review, remove `MAIL_MAX_MESSAGES` and
+reuse the same account-specific variables to resume or complete the mailbox.
+A single process lock applies within one state directory; separate account
+directories can be run sequentially or concurrently, subject to Gmail quotas.
+
 ### Building Mail Importer
 
 Mail Importer uses [Maven](https://maven.apache.org/). This means that it will
@@ -80,7 +157,9 @@ java -jar ./target/mail-importer-0.0.0-SNAPSHOT-jar-with-dependencies.jar \
     --user shadowmarq@gmail.com
 ```
 
-where `DIRECTORY` is the Thunderbird _mailbox_ to open.
+where `DIRECTORY` is the Thunderbird _mailbox_ to open. It may be either a
+Thunderbird mailbox directory or a standalone mbox file such as
+`Local Folders/Important`.
 
 ### Humboldt runner
 
@@ -130,6 +209,15 @@ RFC822 `Message-ID` before JavaMail normalization, uses that stable identity for
 upload checkpoints, and uses a separate message-plus-folder identity for label
 checkpoints. This prevents JavaMail-generated IDs and folder changes from
 turning a restart into a new upload pass.
+
+When using a standalone mbox file, pass its filename as the mailbox argument;
+the runner accepts both directories and regular files and derives the journal
+from the file or folder name. For example:
+
+```sh
+MAIL_SOURCE_ROOT="/Volumes/Humboldt/marc-data/Thunderbird-ESR-Profile/Mail/Local Folders" \
+  ./mail-migration.sh scan Important
+```
 
 ### Archive upload mode
 
