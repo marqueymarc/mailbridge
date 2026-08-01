@@ -227,6 +227,27 @@ does not copy source folder labels. Each successful imported message receives
 the one Gmail label `Local Imported` (override with
 `MAIL_IMPORTER_ARCHIVE_LABEL`).
 
+After an archive upload, the runner automatically reconciles the archive label
+against the completed Gmail IDs in that folder's journal. It lists the current
+members of the label, batch-adds the label to any journaled IDs that are
+missing it, then lists the label again. This phase never uploads or deletes
+messages. It reports unexpected label members and missing Gmail IDs for review;
+it does not remove or re-upload them. To run the phase independently:
+
+```sh
+MAIL_IMPORTER_ARCHIVE_LABEL="Imported Important" \
+  ./mail-migration.sh reconcile-label Important
+```
+
+The reconciliation result includes journal IDs, label IDs before repair,
+missing IDs, IDs repaired, remaining missing IDs, unexpected label members, and
+IDs no longer retrievable from Gmail. A journal ID that is no longer retrievable
+is reported rather than re-uploaded, because re-uploading it could create a
+duplicate after a delayed Gmail response. The membership scan includes Spam and
+Trash; Gmail's label summary counters may exclude those system locations, so
+the reconciliation result is the authoritative membership check.
+The command fails if any journaled ID remains unlabeled after the repair pass.
+
 #### Gmail conversations are not duplicate detection
 
 Gmail groups related messages into a conversation. The number beside a sender

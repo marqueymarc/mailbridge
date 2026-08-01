@@ -23,6 +23,7 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.Multimap;
 import java.io.IOException;
 import java.util.ArrayDeque;
+import java.util.Set;
 import java.util.Deque;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
@@ -102,6 +103,50 @@ public class GmailSyncer {
       throw new IOException("GmailSyncer must be initialized before trashing a label");
     }
     return mailbox.trashLabel(labelName);
+  }
+
+  /** Reconciles one archive label against the completed upload journal without uploading. */
+  public ArchiveLabelReconciliation reconcileArchiveLabel(String labelName, Set<String> journalIds)
+      throws IOException {
+    if (!initialized) {
+      throw new IOException("GmailSyncer must be initialized before reconciling a label");
+    }
+    Mailbox.ArchiveLabelReconciliation result = mailbox.reconcileArchiveLabel(labelName, journalIds);
+    return new ArchiveLabelReconciliation(
+        result.journalIds,
+        result.labelIdsBefore,
+        result.missingBefore,
+        result.added,
+        result.missingAfter,
+        result.unexpected,
+        result.missingInGmail);
+  }
+
+  public static final class ArchiveLabelReconciliation {
+    public final int journalIds;
+    public final int labelIdsBefore;
+    public final int missingBefore;
+    public final int added;
+    public final int missingAfter;
+    public final int unexpected;
+    public final int missingInGmail;
+
+    ArchiveLabelReconciliation(
+        int journalIds,
+        int labelIdsBefore,
+        int missingBefore,
+        int added,
+        int missingAfter,
+        int unexpected,
+        int missingInGmail) {
+      this.journalIds = journalIds;
+      this.labelIdsBefore = labelIdsBefore;
+      this.missingBefore = missingBefore;
+      this.added = added;
+      this.missingAfter = missingAfter;
+      this.unexpected = unexpected;
+      this.missingInGmail = missingInGmail;
+    }
   }
 
   /** Read-only existence check for a Gmail message ID returned by a prior upload. */

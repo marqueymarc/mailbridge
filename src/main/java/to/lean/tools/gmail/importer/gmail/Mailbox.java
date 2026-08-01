@@ -50,6 +50,7 @@ import java.util.Deque;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletionService;
@@ -253,6 +254,107 @@ class Mailbox {
           .execute();
     }
     return messageIds.size();
+  }
+
+  ArchiveLabelReconciliation reconcileArchiveLabel(String name, Set<String> expectedIds)
+      throws IOException {
+    Label label = labelsByName.get(name);
+    if (label == null) {
+      throw new IOException("Gmail label does not exist: " + name);
+    }
+    Set<String> actualBefore = listMessageIdsForLabel(label.getId());
+    Set<String> missing = new LinkedHashSet<>(expectedIds);
+    missing.removeAll(actualBefore);
+    Set<String> repairable = new LinkedHashSet<>();
+    Set<String> missingInGmail = new LinkedHashSet<>();
+    for (String gmailId : missing) {
+      if (gmailMessageExists(gmailId)) {
+        repairable.add(gmailId);
+      } else {
+        missingInGmail.add(gmailId);
+      }
+    }
+    Gmail gmail = gmailService.getServiceWithRetries();
+    List<String> repairableIds = new ArrayList<>(repairable);
+    for (int start = 0; start < repairableIds.size(); start += 1000) {
+      List<String> batch = repairableIds.subList(start, Math.min(start + 1000, repairableIds.size()));
+      if (!batch.isEmpty()) {
+        gmail
+            .users()
+            .messages()
+            .batchModify(
+                user.getEmailAddress(),
+                new BatchModifyMessagesRequest()
+                    .setIds(batch)
+                    .setAddLabelIds(Collections.singletonList(label.getId())))
+            .execute();
+      }
+    }
+    Set<String> actualAfter = listMessageIdsForLabel(label.getId());
+    Set<String> missingAfter = new LinkedHashSet<>(expectedIds);
+    missingAfter.removeAll(actualAfter);
+    Set<String> unexpected = new LinkedHashSet<>(actualAfter);
+    unexpected.removeAll(expectedIds);
+    return new ArchiveLabelReconciliation(
+        expectedIds.size(),
+        actualBefore.size(),
+        missing.size(),
+        repairable.size() - missingAfter.size(),
+        missingAfter.size(),
+        unexpected.size(),
+        missingInGmail.size());
+  }
+
+  private Set<String> listMessageIdsForLabel(String labelId) throws IOException {
+    Set<String> messageIds = new LinkedHashSet<>();
+    String pageToken = null;
+    do {
+      ListMessagesResponse response =
+          gmailService
+              .getServiceWithRetries()
+              .users()
+              .messages()
+              .list(user.getEmailAddress())
+              .setLabelIds(Collections.singletonList(labelId))
+              .setIncludeSpamTrash(true)
+              .setPageToken(pageToken)
+              .setMaxResults(500L)
+              .execute();
+      if (response.getMessages() != null) {
+        for (Message message : response.getMessages()) {
+          messageIds.add(message.getId());
+        }
+      }
+      pageToken = response.getNextPageToken();
+    } while (pageToken != null && !pageToken.isEmpty());
+    return messageIds;
+  }
+
+  static final class ArchiveLabelReconciliation {
+    final int journalIds;
+    final int labelIdsBefore;
+    final int missingBefore;
+    final int added;
+    final int missingAfter;
+    final int unexpected;
+    final int missingInGmail;
+
+    ArchiveLabelReconciliation(
+        int journalIds,
+        int labelIdsBefore,
+        int missingBefore,
+        int added,
+        int missingAfter,
+        int unexpected,
+        int missingInGmail) {
+      this.journalIds = journalIds;
+      this.labelIdsBefore = labelIdsBefore;
+      this.missingBefore = missingBefore;
+      this.added = added;
+      this.missingAfter = missingAfter;
+      this.unexpected = unexpected;
+      this.missingInGmail = missingInGmail;
+    }
   }
 
   /** Returns whether Gmail can currently retrieve this immutable message ID. */

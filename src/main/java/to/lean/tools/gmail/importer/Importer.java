@@ -25,6 +25,7 @@ import java.io.IOException;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.logging.Logger;
 import javax.inject.Provider;
@@ -115,6 +116,10 @@ public class Importer {
       verifyReturnedIds(storage);
       return;
     }
+    if (commandLineArguments.reconcileArchiveLabelName != null) {
+      reconcileArchiveLabel();
+      return;
+    }
     if (commandLineArguments.auditGmail) {
       auditGmail(storage);
       return;
@@ -149,6 +154,38 @@ public class Importer {
       }
     }
     System.out.format("RETURNED_ID_VERIFY source=%d present=%d missing=%d%n", source, present, missing);
+  }
+
+  private void reconcileArchiveLabel() throws IOException {
+    try (UploadRunLock ignored = UploadRunLock.acquire(commandLineArguments.lockFilePath)) {
+      GmailSyncer gmailSyncer = gmailSyncerProvider.get();
+      gmailSyncer.init();
+      CheckpointStore checkpoint = new CheckpointStore(commandLineArguments.checkpointPath);
+      Set<String> expected = new HashSet<>();
+      for (String gmailId : checkpoint.completedEntries().values()) {
+        if (gmailId != null && !gmailId.isEmpty()) {
+          expected.add(gmailId);
+        }
+      }
+      GmailSyncer.ArchiveLabelReconciliation result =
+          gmailSyncer.reconcileArchiveLabel(commandLineArguments.reconcileArchiveLabelName, expected);
+      System.out.format(
+          "ARCHIVE_LABEL_RECONCILE label=%s journal_ids=%d label_ids_before=%d missing_before=%d added=%d missing_after=%d unexpected=%d missing_in_gmail=%d%n",
+          commandLineArguments.reconcileArchiveLabelName,
+          result.journalIds,
+          result.labelIdsBefore,
+          result.missingBefore,
+          result.added,
+          result.missingAfter,
+          result.unexpected,
+          result.missingInGmail);
+      if (result.missingAfter > 0) {
+        throw new IOException(
+            "Archive label reconciliation incomplete: "
+                + result.missingAfter
+                + " journal IDs remain unlabeled");
+      }
+    }
   }
 
   private void labelStatus() throws IOException {

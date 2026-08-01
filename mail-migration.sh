@@ -29,6 +29,7 @@ Commands:
   run MAILBOX              Resume or start a concurrent archival upload.
   verify MAILBOX           Verify a v4 journal against its local source (no Gmail access).
   reconcile MAILBOX        Reconcile only ambiguous in-flight requests (no uploads).
+  reconcile-label MAILBOX  Reconcile the archive label against completed Gmail IDs.
   guarded                  Run marc.old, pause for cleanup approval, then Import.
   status                   Show processes and durable checkpoint counts.
   config                   Show the resolved non-secret account and state paths.
@@ -135,6 +136,21 @@ run_mailbox() {
     --checkpoint "$STATE/$stem-journal.tsv" \
     --lock_file "$STATE/uploader.lock" \
     ${MAIL_RETRY_INFLIGHT:+--retry_inflight} \
+    --credential_store "$CREDENTIAL_STORE" \
+    --client_secret "$CLIENT_SECRET"
+  reconcile_archive_label "$mailbox_key"
+}
+
+reconcile_archive_label() {
+  local mailbox_key="$1"
+  local mailbox="$(mailbox_name "$mailbox_key")"
+  local stem="$(checkpoint_stem "$mailbox_key")"
+  run_upload_java \
+    --mailbox "$SOURCE_ROOT/$mailbox" \
+    --user "$USER_EMAIL" \
+    --reconcile_archive_label "$ARCHIVE_LABEL" \
+    --checkpoint "$STATE/$stem-journal.tsv" \
+    --lock_file "$STATE/uploader.lock" \
     --credential_store "$CREDENTIAL_STORE" \
     --client_secret "$CLIENT_SECRET"
 }
@@ -257,6 +273,10 @@ case "$command_name" in
   reconcile)
     [[ $# -eq 1 ]] || die "reconcile requires a mailbox name"
     reconcile_mailbox "$1"
+    ;;
+  reconcile-label)
+    [[ $# -eq 1 ]] || die "reconcile-label requires a mailbox name"
+    reconcile_archive_label "$1"
     ;;
   audit)
     [[ $# -eq 1 ]] || die "audit requires a mailbox name"

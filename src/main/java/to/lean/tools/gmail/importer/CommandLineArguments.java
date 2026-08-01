@@ -174,6 +174,12 @@ public class CommandLineArguments {
   public boolean verifyReturnedIds;
 
   @Option(
+      name = "--reconcile_archive_label",
+      metaVar = "LABEL",
+      usage = "Compare completed journal IDs with one Gmail label and batch-add that label to missing messages.")
+  public String reconcileArchiveLabelName;
+
+  @Option(
       name = "--client_secret_resource_path",
       metaVar = "SECRET_RESOURCE_PATH",
       hidden = true,

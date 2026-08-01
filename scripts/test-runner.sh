@@ -36,5 +36,6 @@ marc_config="$(
 shadow_state="$(print -r -- "$shadow_config" | /usr/bin/awk -F= '$1 == "state" { print $2 }')"
 marc_state="$(print -r -- "$marc_config" | /usr/bin/awk -F= '$1 == "state" { print $2 }')"
 [[ "$shadow_state" != "$marc_state" ]]
+[[ "$(MAIL_IMPORTER_ROOT="$test_root" "$RUNNER" help)" == *"reconcile-label"* ]]
 
 print -r -- "runner checks passed"

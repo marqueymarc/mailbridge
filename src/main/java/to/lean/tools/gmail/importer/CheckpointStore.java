@@ -14,6 +14,7 @@ import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.Base64;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -51,6 +52,11 @@ public final class CheckpointStore {
 
   public synchronized String getUploadedGmailMessageId(String key) {
     return uploaded.get(key);
+  }
+
+  /** Returns a stable snapshot of completed source keys and their Gmail IDs. */
+  public synchronized Map<String, String> completedEntries() {
+    return new LinkedHashMap<>(completed);
   }
 
   /** Persists the intent before the request can reach Gmail. */
